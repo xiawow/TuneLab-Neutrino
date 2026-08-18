@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\TuneLab\TuneLab.Foundation\TuneLab.Foundation.csproj" />
+    <ProjectReference Include="..\..\..\TuneLab\TuneLab.SDK\TuneLab.SDK.csproj" />
+  </ItemGroup>
+
+</Project>

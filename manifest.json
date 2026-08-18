@@ -1,0 +1,20 @@
+{
+  "id": "com.xiawow.tunelab.neutrino.v3",
+  "name": "NEUTRINO v3 (CPU)",
+  "version": "0.1.0",
+  "author": "xiawow",
+  "description": "Native NEUTRINO v3 voice synthesis for TuneLab 2.0, using the original t/p/s/v model chain on CPU.",
+  "introduction": "Introduction.md",
+  "localizations": {
+    "zh-CN": {
+      "description": "TuneLab 2.0 的 NEUTRINO v3 原生 CPU 推理插件，使用原版 t/p/s/v 模型链。",
+      "introduction": "Introduction.zh-CN.md"
+    }
+  },
+  "sdk-version": "1.0",
+  "type": "voice",
+  "engine": "NeutrinoV3Native",
+  "class": "TuneLab.NeutrinoV3.NeutrinoV3Engine",
+  "assembly": "TuneLab.NeutrinoV3.dll",
+  "platforms": ["win-x64"]
+}
