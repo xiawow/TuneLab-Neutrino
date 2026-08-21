@@ -6,6 +6,7 @@ namespace TuneLab.NeutrinoV3;
 public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
 {
     const string RootSetting = "neutrino_root";
+    internal const string StyleShiftAutomationId = "shfc";
 
     public IReadOnlyOrderedMap<string, VoiceSourceInfo> VoiceSourceInfos => mVoiceInfos;
 
@@ -79,7 +80,7 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
     }
 
     public IReadOnlyOrderedMap<PropertyKey, AutomationConfig> GetAutomationConfigs(
-        IVoiceSynthesisPartPropertyContext context) => [];
+        IVoiceSynthesisPartPropertyContext context) => sAutomationConfigs;
 
     public IReadOnlyOrderedMap<PropertyKey, AutomationConfig> GetSynthesizedParameterConfigs(
         IVoiceSynthesisPartPropertyContext context) => [];
@@ -145,4 +146,17 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
     readonly Dictionary<string, NeutrinoVoicebank> mVoicebanks = new(StringComparer.OrdinalIgnoreCase);
     string mConfiguredRoot = string.Empty;
     bool mInitialized;
+
+    static readonly OrderedMap<PropertyKey, AutomationConfig> sAutomationConfigs = new()
+    {
+        {
+            (StyleShiftAutomationId, "SHFC (cent)"),
+            AutomationConfig.Create(-1200, 1200)
+                .WithDefault(0)
+                .WithColor("#58A6A6")
+                .WithFormat(NumberFormat.Decimals(0))
+                .WithMinLabel("-12 st")
+                .WithMaxLabel("+12 st")
+        },
+    };
 }

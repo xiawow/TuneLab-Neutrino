@@ -26,6 +26,11 @@ internal sealed class NeutrinoV3Session : IVoiceSynthesisSession
         context.Committed.Subscribe(OnCommitted);
         context.Pitch.RangeModified.Subscribe(OnPitchChanged);
         context.PitchDeviation.RangeModified.Subscribe(OnPitchChanged);
+        if (context.Automations.TryGetValue(NeutrinoV3Engine.StyleShiftAutomationId, out var styleShift))
+        {
+            mStyleShift = styleShift;
+            mStyleShift.RangeModified.Subscribe(OnPitchChanged);
+        }
         mNeedResegment = true;
     }
 
@@ -210,6 +215,7 @@ internal sealed class NeutrinoV3Session : IVoiceSynthesisSession
         mContext.Committed.Unsubscribe(OnCommitted);
         mContext.Pitch.RangeModified.Unsubscribe(OnPitchChanged);
         mContext.PitchDeviation.RangeModified.Unsubscribe(OnPitchChanged);
+        mStyleShift?.RangeModified.Unsubscribe(OnPitchChanged);
         foreach (Piece piece in mPieces)
             piece.Segment?.Dispose();
         mPieces.Clear();
@@ -309,7 +315,8 @@ internal sealed class NeutrinoV3Session : IVoiceSynthesisSession
     {
         foreach (Piece piece in mPieces)
         {
-            if (piece.EndTime < startTime || piece.StartTime > endTime)
+            double synthesisStart = Math.Max(0, piece.StartTime - piece.AvailableLeadingSeconds);
+            if (piece.EndTime < startTime || synthesisStart > endTime)
                 continue;
             MarkDirty(piece);
         }
@@ -362,6 +369,7 @@ internal sealed class NeutrinoV3Session : IVoiceSynthesisSession
 
     readonly IVoiceSynthesisContext mContext;
     readonly NeutrinoVoicebank mVoicebank;
+    readonly ISynthesisAutomation? mStyleShift;
     readonly DisposableManager mSubscriptions = new();
     readonly List<Piece> mPieces = [];
     readonly ActionEvent mPhonemesChanged = new();

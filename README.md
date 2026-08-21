@@ -68,3 +68,4 @@ NEUTRINO and each voice library.
 - Japanese kana, supported direct phonemes, and common romaji input
 - TuneLab phoneme layout, pinned phonemes, pitch editing, rests, and
   continuation lyrics such as `-`, `+`, and `+~`
+- `SHFC` style shift automation from -1200 to +1200 cents with compensated F0

@@ -133,6 +133,51 @@ static void RunSelfTests(string root, NeutrinoVoicebank voicebank)
         pinnedAtZero.PitchSegments.SelectMany(segment => segment).All(point => point.X >= 0),
         "Pinned phoneme pitch output must be clipped at time zero.");
 
+    IReadOnlyList<VoiceSynthesisNoteSnapshot> styleNotes = [
+        CreateNote("style", 0.5, 1.5, "あ"),
+    ];
+    float[] missingStyle = NeutrinoSynthesis.BuildStyleShiftCents(
+        CreateSnapshot(styleNotes), 4, 0.5);
+    float[] zeroStyle = NeutrinoSynthesis.BuildStyleShiftCents(
+        CreateSnapshot(styleNotes, styleShiftCents: 0), 4, 0.5);
+    Require(
+        missingStyle.Length == 0 && zeroStyle.Length == 0,
+        "A missing or zero SHFC track must preserve the previous p.bin input path.");
+
+    float[] frameStyle = [600, 600, -600, -600];
+    float[] phoneStyle = NeutrinoSynthesis.BuildPhoneStyleShiftCents(
+        [1, 1, 2, 2], 2, frameStyle);
+    Require(
+        phoneStyle.SequenceEqual(new float[] { 600, -600 }),
+        "SHFC frame values must be averaged onto the matching phonemes.");
+    float[] shiftedScore = NeutrinoSynthesis.ApplyStyleShiftToScorePitches(
+        [100, 200], phoneStyle);
+    Require(
+        Math.Abs(shiftedScore[0] - 141.42136f) < 1e-4 &&
+        Math.Abs(shiftedScore[1] - 141.42136f) < 1e-4,
+        "SHFC must shift the score pitch supplied to p.bin.");
+    float[] compensatedF0 = (float[])shiftedScore.Clone();
+    NeutrinoSynthesis.ApplyInverseStyleShiftToF0(compensatedF0, [600, -600]);
+    Require(
+        Math.Abs(compensatedF0[0] - 100) < 1e-4 &&
+        Math.Abs(compensatedF0[1] - 200) < 1e-4,
+        "SHFC must restore the final F0 after p.bin inference.");
+
+    NeutrinoRenderedBlock shiftedStyle = Render(
+        voicebank,
+        CreateSnapshot(styleNotes, styleShiftCents: 600),
+        [false],
+        0.5);
+    RequireSingingAudio(shiftedStyle, "SHFC style shift");
+    double[] shiftedPitch = shiftedStyle.PitchSegments.SelectMany(segment => segment).Select(point => point.Y).ToArray();
+    Require(shiftedPitch.Length > 0, "The SHFC test needs voiced pitch points.");
+    double meanPitchDifference = shiftedPitch.Average() - 60;
+    Require(
+        Math.Abs(meanPitchDifference) < 2,
+        $"SHFC must compensate transposition; mean pitch is {meanPitchDifference:F2} semitones from the note.");
+    Console.WriteLine(
+        $"SHFC +600 meanPitchDeltaFromNote={meanPitchDifference:F3} st");
+
     bool rejectedInvalidRoot = false;
     try
     {
@@ -165,14 +210,28 @@ static VoiceSynthesisNoteSnapshot CreateNote(
     };
 
 static VoiceSynthesisSnapshot CreateSnapshot(
-    IReadOnlyList<VoiceSynthesisNoteSnapshot> notes) => new()
+    IReadOnlyList<VoiceSynthesisNoteSnapshot> notes,
+    double? styleShiftCents = null)
+{
+    var automations = new Map<string, SynthesisAutomationSnapshot>();
+    if (styleShiftCents.HasValue)
+    {
+        automations.Add(
+            NeutrinoV3Engine.StyleShiftAutomationId,
+            new SynthesisAutomationSnapshot
+            {
+                Evaluator = new ConstantEvaluator(styleShiftCents.Value),
+            });
+    }
+    return new VoiceSynthesisSnapshot
     {
         Notes = notes,
         Pitch = new SynthesisAutomationSnapshot { Evaluator = new ConstantEvaluator(double.NaN) },
         PitchDeviation = new SynthesisAutomationSnapshot { Evaluator = new ConstantEvaluator(0) },
         PartProperties = PropertyObject.Empty,
-        Automations = new Map<string, SynthesisAutomationSnapshot>(),
+        Automations = automations,
     };
+}
 
 static NeutrinoRenderedBlock Render(
     NeutrinoVoicebank voicebank,

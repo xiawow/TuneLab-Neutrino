@@ -26,6 +26,8 @@ internal static class NeutrinoSynthesis
     const float MelspecMax = 1f;
     const float WaveScale = 0.9885531068f;
     const float WaveClamp = 0.9988493919f;
+    const float StyleShiftMinCents = -1200f;
+    const float StyleShiftMaxCents = 1200f;
 
     public static NeutrinoRenderedBlock? Render(
         NeutrinoVoicebank voicebank,
@@ -127,6 +129,10 @@ internal static class NeutrinoSynthesis
             normalizedBoundaries,
             totalFrames,
             FrameSeconds);
+        float[] styleShiftCents = BuildStyleShiftCents(
+            snapshot,
+            totalFrames,
+            synthesisStart);
 
         float[] f0 = RunPitch(
             voicebank,
@@ -137,6 +143,7 @@ internal static class NeutrinoSynthesis
             finalDurations,
             frameChunks,
             totalFrames,
+            styleShiftCents,
             cancellation);
         ApplyTuneLabPitch(snapshot, f0, phonemeIds, framePhonemeMap, synthesisStart);
         IReadOnlyList<IReadOnlyList<Point>> pitchSegments = BuildPitchSegments(f0, synthesisStart);
@@ -335,6 +342,7 @@ internal static class NeutrinoSynthesis
         float[] timingDurations,
         FrameChunk[] chunks,
         int totalFrames,
+        float[] styleShiftCents,
         CancellationToken cancellation)
     {
         var result = new float[totalFrames];
@@ -350,6 +358,12 @@ internal static class NeutrinoSynthesis
             float[] scores = NeutrinoTiming.Slice(scoreDurations, chunk.PhoneStart, chunk.PhoneCount);
             long[] positions = NeutrinoTiming.Slice(phonePositions, chunk.PhoneStart, chunk.PhoneCount);
             long[] frameMap = NeutrinoTiming.BuildFramePhonemeMap(timing, chunk.FrameCount, FrameSeconds);
+            float[] chunkStyleShift = styleShiftCents.Length == 0
+                ? []
+                : NeutrinoTiming.Slice(styleShiftCents, chunk.FrameStart, chunk.FrameCount);
+            pitches = ApplyStyleShiftToScorePitches(
+                pitches,
+                BuildPhoneStyleShiftCents(frameMap, chunk.PhoneCount, chunkStyleShift));
 
             var electron = NamedOnnxValue.CreateFromTensor("electron", new DenseTensor<long>(ids, [1, chunk.PhoneCount]));
             var muon = NamedOnnxValue.CreateFromTensor("muon", new DenseTensor<float>(timing, [1, chunk.PhoneCount]));
@@ -361,11 +375,97 @@ internal static class NeutrinoSynthesis
                 voicebank.RunPitch([electron, muon, tau, selectron, smuon, stau]),
                 chunk.FrameCount,
                 "NEUTRINO v3 p.bin F0 output");
+            ApplyInverseStyleShiftToF0(chunkF0, chunkStyleShift);
             ClampF0(chunkF0);
             Array.Copy(chunkF0, 0, result, chunk.FrameStart, chunkF0.Length);
         }
         return result;
     }
+
+    internal static float[] BuildStyleShiftCents(
+        VoiceSynthesisSnapshot snapshot,
+        int totalFrames,
+        double startTime)
+    {
+        if (totalFrames <= 0 ||
+            !snapshot.Automations.TryGetValue(
+                NeutrinoV3Engine.StyleShiftAutomationId,
+                out var automation))
+        {
+            return [];
+        }
+
+        var times = new double[totalFrames];
+        for (int frame = 0; frame < times.Length; frame++)
+            times[frame] = startTime + frame * FrameSeconds;
+        double[] sampled = automation.Evaluator.Evaluate(times);
+        var result = new float[totalFrames];
+        bool hasShift = false;
+        for (int frame = 0; frame < result.Length; frame++)
+        {
+            double value = sampled[frame];
+            if (!double.IsFinite(value))
+                value = 0;
+            result[frame] = (float)Math.Clamp(value, StyleShiftMinCents, StyleShiftMaxCents);
+            hasShift |= Math.Abs(result[frame]) > 0.5f;
+        }
+        return hasShift ? result : [];
+    }
+
+    internal static float[] BuildPhoneStyleShiftCents(
+        long[] framePhonemeMap,
+        int phoneCount,
+        float[] styleShiftCentsByFrame)
+    {
+        if (phoneCount <= 0 || styleShiftCentsByFrame.Length == 0)
+            return [];
+
+        var sums = new double[phoneCount];
+        var counts = new int[phoneCount];
+        int frameCount = Math.Min(framePhonemeMap.Length, styleShiftCentsByFrame.Length);
+        for (int frame = 0; frame < frameCount; frame++)
+        {
+            int phone = Math.Clamp((int)framePhonemeMap[frame] - 1, 0, phoneCount - 1);
+            sums[phone] += styleShiftCentsByFrame[frame];
+            counts[phone]++;
+        }
+
+        var result = new float[phoneCount];
+        for (int phone = 0; phone < phoneCount; phone++)
+        {
+            if (counts[phone] > 0)
+                result[phone] = (float)(sums[phone] / counts[phone]);
+        }
+        return result;
+    }
+
+    internal static float[] ApplyStyleShiftToScorePitches(
+        float[] scorePitches,
+        float[] phoneStyleShiftCents)
+    {
+        if (phoneStyleShiftCents.Length == 0)
+            return scorePitches;
+
+        var result = (float[])scorePitches.Clone();
+        for (int phone = 0; phone < result.Length && phone < phoneStyleShiftCents.Length; phone++)
+        {
+            if (result[phone] > 0 && Math.Abs(phoneStyleShiftCents[phone]) > 0.5f)
+                result[phone] *= StyleShiftFactor(phoneStyleShiftCents[phone]);
+        }
+        return result;
+    }
+
+    internal static void ApplyInverseStyleShiftToF0(float[] f0, float[] styleShiftCentsByFrame)
+    {
+        for (int frame = 0; frame < f0.Length && frame < styleShiftCentsByFrame.Length; frame++)
+        {
+            if (f0[frame] > 0 && Math.Abs(styleShiftCentsByFrame[frame]) > 0.5f)
+                f0[frame] /= StyleShiftFactor(styleShiftCentsByFrame[frame]);
+        }
+    }
+
+    static float StyleShiftFactor(float cents) =>
+        (float)Math.Pow(2.0, cents / 1200.0);
 
     static void ApplyTuneLabPitch(
         VoiceSynthesisSnapshot snapshot,

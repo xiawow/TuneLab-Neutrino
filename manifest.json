@@ -1,7 +1,7 @@
 {
   "id": "com.xiawow.tunelab.neutrino.v3",
   "name": "NEUTRINO v3 (CPU)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "xiawow",
   "description": "Native NEUTRINO v3 voice synthesis for TuneLab 2.0, using the original t/p/s/v model chain on CPU.",
   "introduction": "Introduction.md",

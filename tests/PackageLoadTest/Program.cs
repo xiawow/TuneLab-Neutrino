@@ -25,12 +25,30 @@ try
 {
     if (engine.VoiceSourceInfos.Count == 0)
         throw new Exception("The loaded plugin did not find any NEUTRINO v3 voicebanks.");
+    var automations = engine.GetAutomationConfigs(null!);
+    AutomationConfig? styleShift = null;
+    foreach (var pair in automations)
+    {
+        if (pair.Key.Id == "shfc")
+        {
+            styleShift = pair.Value;
+            break;
+        }
+    }
+    if (styleShift is null ||
+        styleShift.MinValue != -1200 ||
+        styleShift.MaxValue != 1200 ||
+        styleShift.DefaultValue != 0)
+    {
+        throw new Exception("The packaged plugin did not expose the expected SHFC automation.");
+    }
     string? nativeRuntime = loadContext.ProbeUnmanagedDll("onnxruntime");
     if (nativeRuntime is null || !File.Exists(nativeRuntime))
         throw new Exception("The packaged ONNX Runtime native library cannot be resolved.");
 
     Console.WriteLine($"Loaded {engineType.FullName} through TuneLab-compatible isolation.");
     Console.WriteLine($"Voicebanks: {string.Join(", ", engine.VoiceSourceInfos.Keys)}");
+    Console.WriteLine("Automation: SHFC -1200..1200 cent, default 0");
     Console.WriteLine($"ONNX Runtime: {nativeRuntime}");
 }
 finally
