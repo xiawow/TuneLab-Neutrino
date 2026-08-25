@@ -41,8 +41,12 @@ artifacts/TuneLab.NeutrinoV3-win-x64.tlx
 
 ## Voicebanks
 
-After installing the plugin, set the NEUTRINO directory in TuneLab's extension
-settings. A normal installation looks like:
+Open TuneLab's extension settings and add one or more voicebank directories.
+The first row is blank by default, and the `+` button adds another directory.
+Each entry may point to a complete NEUTRINO installation, its `model` directory,
+or one individual voicebank directory such as `model/ZUNDAMON`.
+
+A normal installation looks like:
 
 ```text
 NEUTRINO/
@@ -53,10 +57,12 @@ NEUTRINO/
 |       |-- s.bin
 |       |-- v.bin
 |       \-- info.toml
-\-- settings/
-    \-- dic/
-        \-- japanese.utf_8.table
 ```
+
+Leaving the list blank keeps automatic discovery enabled. Overlapping entries
+are safe: each physical model directory is loaded only once. Phoneme conversion
+always uses the dictionary bundled with this plugin, so no dictionary is read
+from any configured voicebank directory.
 
 Voice models are not included in this repository. Follow the licenses of
 NEUTRINO and each voice library.

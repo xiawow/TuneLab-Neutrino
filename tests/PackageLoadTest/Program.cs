@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json;
+using TuneLab.Foundation;
 using TuneLab.SDK;
 
 string packageDirectory = args.Length > 0
@@ -19,6 +20,15 @@ Assembly pluginAssembly = loadContext.LoadFromAssemblyPath(assemblyPath);
 Type engineType = pluginAssembly.GetType(className, throwOnError: true)!;
 if (Activator.CreateInstance(engineType) is not IVoiceSynthesisEngine engine)
     throw new Exception("The manifest class does not implement TuneLab's voice engine contract.");
+if (engine is not IExtensionSettings extensionSettings)
+    throw new Exception("The manifest class does not expose extension settings.");
+
+ObjectConfig settingsConfig = extensionSettings.GetSettingsConfig(new SettingsContext(PropertyObject.Empty));
+var voicebankPathsEntry = settingsConfig.Properties
+    .FirstOrDefault(pair => pair.Key.Id == "voicebank_paths");
+ListConfig? voicebankPaths = voicebankPathsEntry?.Value as ListConfig;
+if (voicebankPaths is null || voicebankPaths.Elements.Count != 1 || voicebankPaths.AddableElements.Count != 1)
+    throw new Exception("Voicebank directories must start with one empty row and support adding more rows.");
 
 engine.Init();
 try
@@ -99,4 +109,9 @@ sealed class HostCompatiblePluginLoadContext : AssemblyLoadContext
 
     readonly string mPluginDirectory;
     readonly AssemblyDependencyResolver mResolver;
+}
+
+sealed class SettingsContext(PropertyObject settings) : IExtensionSettingsContext
+{
+    public PropertyObject Settings => settings;
 }

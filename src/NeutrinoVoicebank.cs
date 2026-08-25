@@ -162,18 +162,29 @@ internal sealed class NeutrinoOnnxModels : IDisposable
 
 internal static class NeutrinoVoicebankLocator
 {
-    public static string ResolveRoot(string configured)
+    public static IReadOnlyList<string> ResolveSearchPaths(IReadOnlyList<string> configuredPaths)
     {
-        if (!string.IsNullOrWhiteSpace(configured))
+        if (configuredPaths.Count > 0)
         {
-            string? explicitRoot = NormalizePath(configured);
-            if (explicitRoot is not null &&
-                Directory.Exists(explicitRoot) &&
-                ScanModelDirectories(explicitRoot).Any())
+            var resolved = new List<string>(configuredPaths.Count);
+            var invalid = new List<string>();
+            foreach (string configuredPath in configuredPaths)
             {
-                return explicitRoot;
+                string? path = NormalizePath(configuredPath);
+                if (path is null || !Directory.Exists(path) || !ScanModelDirectories(path).Any())
+                {
+                    invalid.Add(configuredPath);
+                    continue;
+                }
+                if (!resolved.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    resolved.Add(path);
             }
-            throw new DirectoryNotFoundException($"The configured NEUTRINO directory is invalid: {configured}");
+            if (invalid.Count > 0)
+            {
+                throw new DirectoryNotFoundException(
+                    $"The following voicebank directories are invalid: {string.Join(", ", invalid.Select(path => $"'{path}'"))}");
+            }
+            return resolved;
         }
 
         var candidates = new List<string>();
@@ -189,11 +200,11 @@ internal static class NeutrinoVoicebankLocator
         foreach (string candidate in candidates)
         {
             if (Directory.Exists(candidate) && ScanModelDirectories(candidate).Any())
-                return candidate;
+                return [candidate];
         }
 
         throw new DirectoryNotFoundException(
-            "NEUTRINO directory was not found automatically. Set it in Settings > Extensions.");
+            "NEUTRINO voicebanks were not found automatically. Add a voicebank directory in Settings > Extensions.");
 
         void Add(string? path)
         {
@@ -220,10 +231,11 @@ internal static class NeutrinoVoicebankLocator
         }
     }
 
-    public static List<NeutrinoVoicebank> Scan(string root)
+    public static List<NeutrinoVoicebank> Scan(IReadOnlyList<string> searchPaths)
     {
         var result = new List<NeutrinoVoicebank>();
-        foreach (string modelDirectory in ScanModelDirectories(root)
+        foreach (string modelDirectory in searchPaths
+            .SelectMany(ScanModelDirectories)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
         {

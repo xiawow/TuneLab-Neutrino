@@ -5,18 +5,36 @@ namespace TuneLab.NeutrinoV3;
 
 public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
 {
-    const string RootSetting = "neutrino_root";
+    const string VoicebankPathsSetting = "voicebank_paths";
+    const string LegacyRootSetting = "neutrino_root";
     internal const string StyleShiftAutomationId = "shfc";
 
     public IReadOnlyOrderedMap<string, VoiceSourceInfo> VoiceSourceInfos => mVoiceInfos;
 
     public ObjectConfig GetSettingsConfig(IExtensionSettingsContext context)
     {
+        IReadOnlyList<IControllerConfig> pathElements;
+        if (context.Settings.Map.ContainsKey(VoicebankPathsSetting))
+        {
+            int count = context.Settings.GetValue(VoicebankPathsSetting, PropertyArray.Empty).Count;
+            pathElements = Enumerable.Range(0, count)
+                .Select(_ => (IControllerConfig)TextBoxConfig.Create())
+                .ToArray();
+        }
+        else
+        {
+            string legacyPath = NormalizeConfiguredPath(
+                context.Settings.GetString(LegacyRootSetting, ""));
+            pathElements = [TextBoxConfig.Create(legacyPath)];
+        }
+
         var properties = new OrderedMap<PropertyKey, IControllerConfig>
         {
             {
-                (RootSetting, IsChinese ? "NEUTRINO 目录" : "NEUTRINO directory"),
-                TextBoxConfig.Create("")
+                (VoicebankPathsSetting, IsChinese ? "声库目录" : "Voicebank directories"),
+                ListConfig.Create(
+                    pathElements,
+                    [new AddableElement(TextBoxConfig.Create())])
             },
         };
         return ObjectConfig.Create(properties);
@@ -24,15 +42,15 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
 
     public void ApplySettings(PropertyObject settings)
     {
-        string configured = settings.GetString(RootSetting, "").Trim().Trim('"');
+        string[] configuredPaths = ReadConfiguredPaths(settings);
         lock (mGate)
         {
-            if (string.Equals(configured, mConfiguredRoot, StringComparison.OrdinalIgnoreCase))
+            if (mConfiguredPaths.SequenceEqual(configuredPaths, StringComparer.OrdinalIgnoreCase))
                 return;
 
-            mConfiguredRoot = configured;
             if (mInitialized)
-                ReloadCatalog();
+                ReloadCatalog(configuredPaths);
+            mConfiguredPaths = configuredPaths;
         }
     }
 
@@ -42,7 +60,7 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
         {
             if (mInitialized)
                 return;
-            ReloadCatalog();
+            ReloadCatalog(mConfiguredPaths);
             mInitialized = true;
         }
     }
@@ -94,20 +112,22 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
     public IReadOnlyMap<int, ObjectConfig> GetPhonemePropertyConfigs(
         IVoiceSynthesisNotePropertyContext context) => new Map<int, ObjectConfig>();
 
-    void ReloadCatalog()
+    void ReloadCatalog(IReadOnlyList<string> configuredPaths)
     {
-        string root = NeutrinoVoicebankLocator.ResolveRoot(mConfiguredRoot);
-        var found = NeutrinoVoicebankLocator.Scan(root);
+        IReadOnlyList<string> searchPaths = NeutrinoVoicebankLocator.ResolveSearchPaths(configuredPaths);
+        var found = NeutrinoVoicebankLocator.Scan(searchPaths);
         if (found.Count == 0)
         {
             throw new DirectoryNotFoundException(
-                $"No NEUTRINO v3 voicebanks were found under '{root}'. " +
-                "The directory must contain model/<voice>/t.bin, p.bin, s.bin and v.bin.");
+                "No NEUTRINO v3 voicebanks were found. A configured directory may be a " +
+                "NEUTRINO folder, its model folder, or one voicebank folder containing " +
+                "t.bin, p.bin, s.bin and v.bin.");
         }
 
         string packageDictionary = Path.Combine(PackageDirectory, "Resources", "japanese.utf_8.table");
-        string rootDictionary = Path.Combine(root, "settings", "dic", "japanese.utf_8.table");
-        NeutrinoPhonemes.LoadDictionary(File.Exists(rootDictionary) ? rootDictionary : packageDictionary);
+        if (!File.Exists(packageDictionary))
+            throw new FileNotFoundException("The bundled NEUTRINO phoneme dictionary is missing.", packageDictionary);
+        NeutrinoPhonemes.LoadDictionary(packageDictionary);
 
         var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var voicebank in found)
@@ -138,13 +158,35 @@ public sealed class NeutrinoV3Engine : IVoiceSynthesisEngine, IExtensionSettings
 
     static bool IsChinese => TuneLabContext.Global.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
 
+    static string[] ReadConfiguredPaths(PropertyObject settings)
+    {
+        IEnumerable<string> values;
+        if (settings.Map.ContainsKey(VoicebankPathsSetting))
+        {
+            values = settings.GetValue(VoicebankPathsSetting, PropertyArray.Empty)
+                .Select(value => value.ToString(out string? path) ? path : "");
+        }
+        else
+        {
+            values = [settings.GetString(LegacyRootSetting, "")];
+        }
+
+        return values
+            .Select(NormalizeConfiguredPath)
+            .Where(path => path.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    static string NormalizeConfiguredPath(string path) => path.Trim().Trim('"');
+
     internal static string PackageDirectory =>
         Path.GetDirectoryName(typeof(NeutrinoV3Engine).Assembly.Location)!;
 
     readonly object mGate = new();
     readonly OrderedMap<string, VoiceSourceInfo> mVoiceInfos = new();
     readonly Dictionary<string, NeutrinoVoicebank> mVoicebanks = new(StringComparer.OrdinalIgnoreCase);
-    string mConfiguredRoot = string.Empty;
+    string[] mConfiguredPaths = [];
     bool mInitialized;
 
     static readonly OrderedMap<PropertyKey, AutomationConfig> sAutomationConfigs = new()

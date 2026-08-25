@@ -6,7 +6,10 @@ string root = args.Length > 0 ? args[0] : @"D:\NEUTRINO";
 string model = args.Length > 1 ? args[1] : "MERROW";
 string modelDirectory = Path.Combine(root, "model", model);
 
-NeutrinoPhonemes.LoadDictionary(Path.Combine(root, "settings", "dic", "japanese.utf_8.table"));
+NeutrinoPhonemes.LoadDictionary(Path.Combine(
+    NeutrinoV3Engine.PackageDirectory,
+    "Resources",
+    "japanese.utf_8.table"));
 using var voicebank = new NeutrinoVoicebank
 {
     Id = model,
@@ -178,10 +181,44 @@ static void RunSelfTests(string root, NeutrinoVoicebank voicebank)
     Console.WriteLine(
         $"SHFC +600 meanPitchDeltaFromNote={meanPitchDifference:F3} st");
 
+    string modelRoot = Directory.GetParent(voicebank.ModelDirectory)?.FullName
+        ?? throw new Exception("The smoke-test voicebank has no model parent directory.");
+    string[] supportedSearchPaths = [root, modelRoot, voicebank.ModelDirectory];
+    foreach (string searchPath in supportedSearchPaths)
+    {
+        IReadOnlyList<string> resolved = NeutrinoVoicebankLocator.ResolveSearchPaths([searchPath]);
+        List<NeutrinoVoicebank> scanned = NeutrinoVoicebankLocator.Scan(resolved);
+        try
+        {
+            Require(
+                scanned.Any(item => SamePath(item.ModelDirectory, voicebank.ModelDirectory)),
+                $"Voicebank discovery failed for supported path shape: {searchPath}");
+        }
+        finally
+        {
+            foreach (NeutrinoVoicebank item in scanned)
+                item.Dispose();
+        }
+    }
+
+    List<NeutrinoVoicebank> overlapping = NeutrinoVoicebankLocator.Scan(
+        NeutrinoVoicebankLocator.ResolveSearchPaths(supportedSearchPaths));
+    try
+    {
+        Require(
+            overlapping.Count(item => SamePath(item.ModelDirectory, voicebank.ModelDirectory)) == 1,
+            "Overlapping configured directories must not list the same voicebank more than once.");
+    }
+    finally
+    {
+        foreach (NeutrinoVoicebank item in overlapping)
+            item.Dispose();
+    }
+
     bool rejectedInvalidRoot = false;
     try
     {
-        NeutrinoVoicebankLocator.ResolveRoot(Path.Combine(root, "missing-neutrino-root"));
+        NeutrinoVoicebankLocator.ResolveSearchPaths([Path.Combine(root, "missing-neutrino-root")]);
     }
     catch (DirectoryNotFoundException)
     {
@@ -258,6 +295,12 @@ static void Require(bool condition, string message)
     if (!condition)
         throw new Exception(message);
 }
+
+static bool SamePath(string left, string right) =>
+    string.Equals(
+        Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+        Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+        StringComparison.OrdinalIgnoreCase);
 
 static void PrintResult(NeutrinoRenderedBlock rendered, string noteId)
 {
