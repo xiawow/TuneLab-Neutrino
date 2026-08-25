@@ -1,0 +1,68 @@
+name: Build and release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+        with:
+          path: TuneLab-NeutrinoV3
+
+      - name: Check out TuneLab 2.0
+        uses: actions/checkout@v4
+        with:
+          repository: LiuYunPlayer/TuneLab
+          ref: release/2.0.0
+          path: TuneLab
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build package
+        shell: pwsh
+        working-directory: TuneLab-NeutrinoV3
+        run: .\build.ps1 -Configuration Release
+
+      - name: Read package version
+        id: version
+        shell: pwsh
+        working-directory: TuneLab-NeutrinoV3
+        run: |
+          $version = (Get-Content -LiteralPath .\manifest.json -Raw | ConvertFrom-Json).version
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TuneLab.NeutrinoV3-win-x64
+          path: TuneLab-NeutrinoV3/artifacts/TuneLab.NeutrinoV3-win-x64.tlx
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        working-directory: TuneLab-NeutrinoV3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $asset = ".\artifacts\TuneLab.NeutrinoV3-win-x64.tlx"
+          $releases = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName | ConvertFrom-Json
+          if ($releases.tagName -contains $env:RELEASE_TAG) {
+            gh release upload $env:RELEASE_TAG $asset --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $env:RELEASE_TAG $asset `
+              --repo $env:GITHUB_REPOSITORY `
+              --title "TuneLab NEUTRINO v3 $env:RELEASE_TAG" `
+              --generate-notes `
+              --latest
+          }
