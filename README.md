@@ -75,3 +75,8 @@ NEUTRINO and each voice library.
 - TuneLab phoneme layout, pinned phonemes, pitch editing, rests, and
   continuation lyrics such as `-`, `+`, and `+~`
 - `SHFC` style shift automation from -1200 to +1200 cents with compensated F0
+
+## License
+
+The plugin source code is available under the [MIT License](LICENSE). NEUTRINO,
+TuneLab, ONNX Runtime, and voicebank files remain subject to their own licenses.
